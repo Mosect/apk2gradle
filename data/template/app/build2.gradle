@@ -1,0 +1,274 @@
+import org.w3c.dom.Document
+import org.w3c.dom.Element
+
+import javax.xml.parsers.DocumentBuilderFactory
+
+dependencies {
+    if (file('original/classes.jar').exists()) {
+        compileOnly files('original/classes.jar')
+    }
+    if (file('original/unknown.jar').exists()) {
+        implementation files('original/unknown.jar')
+    }
+}
+
+def readXml = { File file ->
+    return DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(file)
+}
+
+android {
+    aaptOptions {
+        File publicTxtFile = new File(buildDir, 'public.txt')
+        if (!publicTxtFile.exists()) {
+            // 产生public.txt
+            if (!publicTxtFile.parentFile.exists()) publicTxtFile.parentFile.mkdirs()
+            publicTxtFile.text = ''
+        }
+        File publicXmlFile = file('src/main/res/values/public.xml')
+        if (publicXmlFile.exists()) {
+            Document manifest = readXml(file('src/main/AndroidManifest.xml'))
+            def packName = manifest.getDocumentElement().getAttribute("package")
+            Document publicXml = readXml(publicXmlFile)
+            def list = publicXml.getDocumentElement().getElementsByTagName("public")
+            if (list.getLength() > 0) {
+                for (i in 0..<list.getLength()) {
+                    Element pi = list.item(i)
+                    def type = pi.getAttribute('type')
+                    def name = pi.getAttribute('name')
+                    def id = pi.getAttribute('id')
+                    publicTxtFile.append("${packName}:${type}/${name} = ${id}\n")
+                }
+            }
+        }
+        aaptOptions.additionalParameters("--stable-ids", "${publicTxtFile.absolutePath}")
+    }
+}
+
+def dumpDex = { File dexFile, File outDir ->
+    if (!outDir.exists()) {
+        outDir.mkdirs()
+    }
+    javaexec {
+        def baksmali = rootProject.file('gradle/baksmali.jar')
+        main = '-jar'
+        args = [
+                baksmali.getAbsolutePath(), 'd',
+                '--bcp', '""', '-l',
+                '-o', outDir.absolutePath, dexFile.absolutePath
+        ]
+    }
+}
+
+def dumpDexDir = { File dir, File outDir ->
+    def files = dir.listFiles()
+    def result = []
+    files.each {
+        if (it.name ==~ '^classes[0-9]?.dex$') {
+            def smaliDir = new File(outDir, it.name.replace('.', '_'))
+            dumpDex(it, smaliDir)
+            result.add(smaliDir)
+        }
+    }
+    return result
+}
+
+def readSmali = { File file ->
+    println "readSmali: ${file}"
+    def result = [
+            members: [],
+            methods: [:],
+            fields : [:],
+    ]
+    def method = null
+    def lines = file.readLines()
+    lines.each { String line ->
+        boolean handled
+        if (method) {
+            handled = true
+            method.lines.add(line)
+            if (line ==~ '^\\s*\\.end\\s+method\\s*$') {
+                method = null
+            }
+        } else {
+            if (line ==~ '^\\s*\\.method\\s+.+\\(\\S*\\)\\S+.*$') {
+                def ss = line.split('\\s')
+                def name = null
+                for (def si = ss.length - 1; si >= 0; si--) {
+                    String s = ss[si]
+                    if (s.contains('(')) {
+                        name = s
+                        break
+                    }
+                }
+                if (name) {
+                    method = [
+                            type : 'method',
+                            name : name,
+                            lines: [],
+                    ]
+                    result.methods[method.name] = method
+                    result.members.add(method)
+                    handled = true
+                } else {
+                    handled = false
+                }
+            } else if (line ==~ '^\\s*\\.field\\s+.+:\\S+.*$') {
+                def ss = line.split('\\s')
+                def name = null
+                for (def si = ss.length - 1; si >= 0; si--) {
+                    String s = ss[si]
+                    if (s.contains(':')) {
+                        name = s.split(':')[0]
+                        break
+                    }
+                }
+                if (name) {
+                    def obj = [
+                            type: 'field',
+                            line: line,
+                            name: name,
+                    ]
+                    result.members.add(obj)
+                    result.fields[obj.name] = obj
+                    handled = true
+                } else {
+                    handled = false
+                }
+            } else {
+                handled = false
+            }
+        }
+        if (!handled) {
+            def obj = [
+                    type: 'line',
+                    line: line,
+            ]
+            result.members.add(obj)
+        }
+    }
+    return result
+}
+
+def margeSmali = { File from, File to ->
+    println "mergeSmali: ${from} >>> ${to}"
+    def fromSmali = readSmali(from)
+    def toSmali = readSmali(to)
+    fromSmali.methods.each {
+        def method = toSmali.methods[it.key]
+        if (method) {
+            method.lines = it.value.lines
+        } else {
+            // 新增方法
+            toSmali.members.add(it.value)
+        }
+    }
+    fromSmali.fields.each {
+        def field = toSmali.fields[it.key]
+        if (field) {
+            field.line = it.value.line
+        } else {
+            // 新增字段
+            toSmali.members.add(it.value)
+        }
+    }
+
+    def lines = []
+    toSmali.members.each {
+        switch (it.type) {
+            case 'line':
+            case 'field':
+                lines.add(it.line)
+                break
+            case 'method':
+                lines.addAll(it.lines)
+                break
+        }
+    }
+    to.text = ''
+    lines.each {
+        to.append(it)
+        to.append('\n')
+    }
+}
+
+def putSmaliFile = { File file, def classPath, def outSmaliList ->
+    println "putSmaliFile: ${classPath}"
+    File mainDir = null
+    for (File smaliDir : outSmaliList) {
+        if (smaliDir.name == 'classes_dex') {
+            mainDir = smaliDir
+        }
+        File outFile = new File(smaliDir, classPath)
+        if (outFile.exists()) {
+            margeSmali(file, outFile)
+        }
+    }
+    // 新增的smali，复制smali
+    if (mainDir) {
+        File outFile = new File(mainDir, classPath)
+        if (!outFile.parentFile.exists()) outFile.parentFile.mkdirs()
+        outFile.text = file.text
+    }
+}
+
+def createDex = { File smaliDir, File outFile ->
+    println "createDex: ${smaliDir} >>> ${outFile}"
+    if (!outFile.parentFile.exists()) outFile.parentFile.mkdirs()
+    javaexec {
+        def smali = rootProject.file('gradle/smali.jar')
+        main = "-jar"
+        args = [
+                smali.getAbsolutePath(),
+                'a', '-o', outFile.getAbsolutePath(),
+                smaliDir.getAbsolutePath()
+        ]
+    }
+}
+
+// 合并dex
+tasks.whenTaskAdded {
+    Task cur = it
+    if (cur.name ==~ '^mergeDex\\S+') {
+        cur.doLast {
+            def variantName = cur.variantName
+            cur.outputs.files.each {
+                // 生成新的smali
+                def newSmaliList = dumpDexDir(it, new File(buildDir, "smali/${variantName}/_new"))
+
+                // 生产久的smali
+                def oldSmaliList = dumpDexDir(file('original'), new File(buildDir, "smali/${variantName}/_old"))
+
+                // 合并smali
+                newSmaliList.each { File dir ->
+                    def files = fileTree(dir)
+                    files.each { File file ->
+                        if (file.name ==~ '^\\S+.smali$') {
+                            String path = dir.relativePath(file)
+                            putSmaliFile(file, path, oldSmaliList)
+                        }
+                    }
+                }
+
+                // 生成dex
+                File dexDir = new File(buildDir, "dex/${variantName}")
+                oldSmaliList.each {
+                    def dexName = it.name.replace('_', '.')
+                    File dexFile = new File(dexDir, dexName)
+                    createDex(it, dexFile)
+                }
+
+                // 覆盖dex
+                it.listFiles().each {
+                    if (it.name ==~ 'classes[0-9]*.dex') {
+                        it.delete()
+                    }
+                }
+                def dir = it
+                copy {
+                    from(dexDir)
+                    into(dir)
+                }
+            }
+        }
+    }
+}

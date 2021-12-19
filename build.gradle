@@ -1,0 +1,78 @@
+buildscript {
+
+    repositories {
+        mavenCentral()
+        google()
+        maven {
+            url "https://plugins.gradle.org/m2/"
+        }
+    }
+    dependencies {
+        classpath 'com.github.jengelman.gradle.plugins:shadow:5.2.0'
+    }
+}
+
+allprojects {
+    repositories {
+        mavenCentral()
+        google()
+        maven {
+            url "https://plugins.gradle.org/m2/"
+        }
+    }
+}
+
+apply plugin: 'java-library'
+apply plugin: 'com.github.johnrengelman.shadow'
+
+def appVersion = '1.0.1'
+def appName = 'apk2gradle'
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation 'com.google.code.gson:gson:2.8.9'
+    implementation 'org.yaml:snakeyaml:1.21'
+}
+
+jar {
+    manifest {
+        attributes 'Implementation-Title': appName,
+                'Implementation-Version': appVersion,
+                'Main-Class': 'com.mosect.a2g.Apk2Gradle'
+    }
+}
+
+shadowJar {
+    archiveBaseName = appName
+    archiveClassifier = 'beta'
+    archiveVersion = appVersion
+}
+
+task outputProject {
+    dependsOn('shadowJar')
+    setGroup('build')
+
+    File targetDir = new File(buildDir, "apk2gradle-${appVersion}")
+    outputs.dir(targetDir)
+    doLast {
+        def t = tasks.findByName('shadowJar')
+        t.outputs.files.each {
+            File jar = it
+
+            targetDir.deleteDir()
+            targetDir.mkdirs()
+            copy {
+                from(file('data'))
+                into(targetDir)
+            }
+            copy {
+                from(jar)
+                into(targetDir)
+            }
+            new File(targetDir, jar.name).renameTo(new File(targetDir, 'apk2gradle.jar'))
+        }
+    }
+}
+
+sourceCompatibility = "1.8"
+targetCompatibility = "1.8"

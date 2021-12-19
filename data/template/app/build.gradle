@@ -1,0 +1,32 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    compileSdk __COMPILE_SDK__
+
+    defaultConfig {
+        applicationId __APPLICATION_ID__
+        minSdk __MIN_SDK__
+        targetSdk __TARGET__SDK__
+        versionCode __VERSION_CODE__
+        versionName __VERSION_NAME__
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+}
+
+apply from: file('build2.gradle')

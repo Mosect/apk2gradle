@@ -1,0 +1,7 @@
+{
+  "java": "java",
+  "apktool": "apktool.jar",
+  "template": "template",
+  "cache": "cache",
+  "dex2jar": "dex-tools/d2j-dex2jar.bat"
+}
