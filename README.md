@@ -20,12 +20,21 @@ gradlew outputProject
 ```
 相关工具将会输出在**build/apk2gradle-xxx**目录下
 
+不想构建工具？直接点击下载：
+
+[V1.0.1](http://mosect.com/assets/apk2gradle/apk2gradle-1.0.1.zip)
+
+
 ## 使用工具：
 进入工具目录，执行：
 ```
 java -jar apk2gradle.jar export <apk_file_path> [output_dir]
 ```
 之后输出相关gradle项目，可以使用AndroiStudio打开
+
+## 二次开发
+AndroidStudio打开apk2gradle导出的项目，在app/src/main/java目录，创建相关代码即可。
+**相同类下的方法、字段会替换原本dex的方法和字段**
 
 ## 支持
 个人博客：http://mosect.com
