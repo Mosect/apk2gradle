@@ -7,8 +7,8 @@ dependencies {
     if (file('original/classes.jar').exists()) {
         compileOnly files('original/classes.jar')
     }
-    if (file('original/unknown.jar').exists()) {
-        implementation files('original/unknown.jar')
+    if (file('original/res.aar').exists()) {
+        implementation files('original/res.aar')
     }
 }
 
@@ -65,6 +65,7 @@ def dumpDexDir = { File dir, File outDir ->
     files.each {
         if (it.name ==~ '^classes[0-9]?.dex$') {
             def smaliDir = new File(outDir, it.name.replace('.', '_'))
+            smaliDir.delete()
             dumpDex(it, smaliDir)
             result.add(smaliDir)
         }
@@ -73,7 +74,7 @@ def dumpDexDir = { File dir, File outDir ->
 }
 
 def readSmali = { File file ->
-    println "readSmali: ${file}"
+//    println "readSmali: ${file}"
     def result = [
             members: [],
             methods: [:],
@@ -106,6 +107,7 @@ def readSmali = { File file ->
                             name : name,
                             lines: [],
                     ]
+                    method.lines.add(line)
                     result.methods[method.name] = method
                     result.members.add(method)
                     handled = true
@@ -191,21 +193,35 @@ def margeSmali = { File from, File to ->
     }
 }
 
-def putSmaliFile = { File file, def classPath, def outSmaliList ->
+def putSmaliFile = { File file, String classPath, def outSmaliList, String packageName ->
     println "putSmaliFile: ${classPath}"
+    if (classPath.startsWith("com/mosect/a2g/app/res/R")) {
+        println "ignoreSmali: ${file}"
+        return
+    }
     File mainDir = null
+    def rClassPath = "${packageName.replace(".", "/")}/R"
+    def isRClass = classPath.startsWith(rClassPath)
     for (File smaliDir : outSmaliList) {
         if (smaliDir.name == 'classes_dex') {
             mainDir = smaliDir
         }
         File outFile = new File(smaliDir, classPath)
         if (outFile.exists()) {
-            margeSmali(file, outFile)
+            if (isRClass) {
+                // R class, replace
+                println "replaceSmali: ${file} >>> ${outFile}"
+                outFile.text = file.text
+            } else {
+                margeSmali(file, outFile)
+            }
+            return
         }
     }
     // 新增的smali，复制smali
     if (mainDir) {
         File outFile = new File(mainDir, classPath)
+        println "addSmali: ${outFile}"
         if (!outFile.parentFile.exists()) outFile.parentFile.mkdirs()
         outFile.text = file.text
     }
@@ -231,6 +247,8 @@ tasks.whenTaskAdded {
     if (cur.name ==~ '^mergeDex\\S+') {
         cur.doLast {
             def variantName = cur.variantName
+            Document manifest = readXml(file('src/main/AndroidManifest.xml'))
+            String packageName = manifest.getDocumentElement().getAttribute("package")
             cur.outputs.files.each {
                 // 生成新的smali
                 def newSmaliList = dumpDexDir(it, new File(buildDir, "smali/${variantName}/_new"))
@@ -244,7 +262,7 @@ tasks.whenTaskAdded {
                     files.each { File file ->
                         if (file.name ==~ '^\\S+.smali$') {
                             String path = dir.relativePath(file)
-                            putSmaliFile(file, path, oldSmaliList)
+                            putSmaliFile(file, path, oldSmaliList, packageName)
                         }
                     }
                 }

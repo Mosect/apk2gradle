@@ -13,6 +13,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -162,9 +163,6 @@ public final class IOUtils {
 
     private static void copy(byte[] buffer, File src, File dst) {
         if (src.exists()) {
-            if (dst.exists()) {
-                delete(dst);
-            }
             File parentFile = dst.getParentFile();
             if (null != parentFile && !parentFile.exists()) {
                 parentFile.mkdirs();
@@ -216,16 +214,29 @@ public final class IOUtils {
         }
     }
 
-    public static void zipDir(File dir, File out) {
-        if (dir.isDirectory()) {
-            try (FileOutputStream fos = new FileOutputStream(out)) {
-                ZipOutputStream zos = new ZipOutputStream(fos, StandardCharsets.UTF_8);
-                putChildrenToZip(dir, "", zos, new byte[1024]);
-                zos.flush();
-                zos.close();
-            } catch (Exception e) {
-                e.printStackTrace();
+    public static void zip(ZipItem[] items, File out) {
+        try (FileOutputStream fos = new FileOutputStream(out);
+             ZipOutputStream zos = new ZipOutputStream(fos, StandardCharsets.UTF_8)) {
+            byte[] buffer = new byte[1024];
+            for (ZipItem item : items) {
+                if (null != item.getFile()) {
+                    if (item.getFile().isDirectory()) {
+                        putChildrenToZip(item.getFile(), item.getPath(), zos, buffer);
+                    } else if (item.getFile().isFile()) {
+                        zos.putNextEntry(new ZipEntry(item.getPath()));
+                        copyData(item.getFile(), zos, buffer);
+                    }
+                } else if (null != item.getData()) {
+                    zos.putNextEntry(new ZipEntry(item.getPath()));
+                    copyData(item.getData(), zos, buffer);
+                    item.getData().close();
+                } else {
+                    zos.putNextEntry(new ZipEntry(item.getPath()));
+                }
             }
+            zos.flush();
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
@@ -236,18 +247,33 @@ public final class IOUtils {
                 String name = f.getName();
                 if (".".equals(name) || "..".equals(name)) continue;
                 String curPath = path + "/" + name;
-                zos.putNextEntry(new ZipEntry(curPath));
                 if (f.isDirectory()) {
                     putChildrenToZip(f, curPath, zos, buffer);
-                } else {
-                    int len;
-                    try (FileInputStream fis = new FileInputStream(f)) {
-                        while ((len = fis.read(buffer)) > 0) {
-                            zos.write(buffer, 0, len);
-                        }
-                    }
+                } else if (f.isFile()) {
+                    zos.putNextEntry(new ZipEntry(curPath));
+                    copyData(f, zos, buffer);
                 }
             }
+        }
+    }
+
+    private static void copyData(File file, OutputStream dst, byte[] buffer) throws IOException {
+        try (FileInputStream fis = new FileInputStream(file)) {
+            copyData(fis, dst, buffer);
+        }
+    }
+
+    public static void copyData(InputStream src, OutputStream dst, byte[] buffer) throws IOException {
+        int len;
+        while ((len = src.read(buffer)) > 0) {
+            dst.write(buffer, 0, len);
+        }
+    }
+
+    public static void copyResToFile(String resName, File file) throws IOException {
+        try (InputStream is = Apk2Gradle.class.getResourceAsStream(resName);
+             FileOutputStream dst = new FileOutputStream(file)) {
+            IOUtils.copyData(is, dst, new byte[1024]);
         }
     }
 }

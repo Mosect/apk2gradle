@@ -101,16 +101,17 @@ public class Apk2Gradle {
 
         File apkFile = new File(args[1]);
         String outName = apkFile.getName().replace(".", "_") + "_a2g";
-        File outDir = new File(args.length > 2 ? args[2] : outName);
+        File outDir = new File(args.length > 2 ? args[2] : "output/" + outName);
+        File tempDir = new File(cacheDir, String.valueOf(System.currentTimeMillis()));
 
-        // dump apk
-        LogUtils.i(TAG, "dump apk");
-        File apkDir = new File(cacheDir, "apk-" + System.currentTimeMillis());
-        boolean dumpOk = exec(new ProcessBuilder(
-                config.java, "-jar", apktoolFile.getAbsolutePath(),
-                "d", "-s", "-o", apkDir.getAbsolutePath(), apkFile.getAbsolutePath()
-        ));
-        if (dumpOk) {
+        try {
+            // dump apk
+            LogUtils.i(TAG, "dump apk");
+            File apkDir = new File(tempDir, "apk");
+            execWithException(new ProcessBuilder(
+                    config.java, "-jar", apktoolFile.getAbsolutePath(),
+                    "d", "-s", "--use-aapt2", "-o", apkDir.getAbsolutePath(), apkFile.getAbsolutePath()
+            ));
             if (outDir.exists()) IOUtils.delete(outDir);
             outDir.mkdirs();
             // copy template files
@@ -131,6 +132,9 @@ public class Apk2Gradle {
             String packageName = manifest.getDocumentElement().getAttribute("package");
             String compileSdk = manifest.getDocumentElement().getAttribute("platformBuildVersionCode");
             if (TextUtils.empty(compileSdk)) compileSdk = targetSdk;
+            if (Integer.parseInt(compileSdk) < 30) {
+                LogUtils.e(TAG, "compileSdk: " + compileSdk + ", less than 30!");
+            }
             manifest.getDocumentElement().removeAttribute("platformBuildVersionCode");
             manifest.getDocumentElement().removeAttribute("platformBuildVersionName");
 
@@ -151,32 +155,69 @@ public class Apk2Gradle {
             LogUtils.i(TAG, "create AndroidManifest.xml");
             IOUtils.saveDocument(new File(mainDir, "AndroidManifest.xml"), manifest);
             // copy res
-            LogUtils.i(TAG, "copy res");
-            IOUtils.copy(new File(apkDir, "res"), new File(mainDir, "res"));
+            // changed: create res.aar
+//            LogUtils.i(TAG, "copy res");
+//            IOUtils.copy(new File(apkDir, "res"), new File(mainDir, "res"));
+            // copy public.xml
+            IOUtils.copy(new File(apkDir, "res/values/public.xml"), new File(mainDir, "res/values/public.xml"));
             // copy assets
             LogUtils.i(TAG, "copy assets");
             IOUtils.copy(new File(apkDir, "assets"), new File(mainDir, "assets"));
+            // copy jniLibs
+            LogUtils.i(TAG, "copy jniLibs");
+            IOUtils.copy(new File(apkDir, "lib"), new File(mainDir, "jniLibs"));
+            // copy resources
+            LogUtils.i(TAG, "copy resources");
+            IOUtils.copy(new File(apkDir, "kotlin"), new File(mainDir, "resources"));
+            IOUtils.copy(new File(apkDir, "unknown"), new File(mainDir, "resources"));
+            IOUtils.copy(new File(apkDir, "META-INF"), new File(mainDir, "resources"));
+
+            new File(mainDir, "java").mkdirs();
 
             File originalDir = new File(outDir, "app/original");
             originalDir.mkdirs();
+            // create res.aar
+            File resAarDir = new File(tempDir, "res_aar");
+            resAarDir.mkdirs();
+            LogUtils.i(TAG, "create res.aar");
+            File resAarFile = new File(originalDir, "res.aar");
+            execWithException(new ProcessBuilder(
+                    config.java, "-jar", apktoolFile.getAbsolutePath(),
+                    "b", "--use-aapt2", "--r-txt", "-f",
+                    apkDir.getAbsolutePath()
+            ));
+            File rTxtFile = new File(apkDir, "build/R.txt");
+            IOUtils.zip(new ZipItem[]{
+                    new ZipItem("proguard.txt"),
+                    new ZipItem(rTxtFile, "R.txt"),
+                    new ZipItem(new File(apkDir, "res"), "res"),
+                    new ZipItem(Apk2Gradle.class.getResourceAsStream("/aar-manifest.xml"), "AndroidManifest.xml")
+            }, resAarFile);
+
             // create classes.jar
             LogUtils.i(TAG, "create classes.jar");
             File classesJar = new File(originalDir, "classes.jar");
-            exec(new ProcessBuilder(config.dex2jar,
+            execWithException(new ProcessBuilder(config.dex2jar,
                     "-o", classesJar.getAbsolutePath(), apkFile.getAbsolutePath()));
             // create unknown.jar
-            LogUtils.i(TAG, "create unknown.jar");
-            IOUtils.zipDir(new File(apkDir, "unknown"), new File(originalDir, "unknown.jar"));
+            // changed: copy resources
+//            LogUtils.i(TAG, "create unknown.jar");
+//            IOUtils.zipDir(
+//                    new ZipItem[]{
+//                            new ZipItem(new File(apkDir, "unknown"), ""),
+//                            new ZipItem(new File(apkDir, "kotlin"), "kotlin"),
+//                            new ZipItem(new File(apkDir, "META-INF"), "META-INF")
+//                    },
+//                    new File(originalDir, "unknown.jar")
+//            );
             // copy dex files
             LogUtils.i(TAG, "copy dex files");
             copyDexFiles(apkDir, originalDir);
-        }
 
-        LogUtils.i(TAG, "result: " + dumpOk);
-        // 清理缓存
-        IOUtils.delete(apkDir);
-        if (!dumpOk) {
-            System.exit(1);
+            LogUtils.i(TAG, "apk to gradle ok");
+        } finally {
+            // 清理缓存
+            IOUtils.delete(tempDir);
         }
     }
 
@@ -243,7 +284,7 @@ public class Apk2Gradle {
         return config;
     }
 
-    private static boolean exec(ProcessBuilder builder) {
+    private static void execWithException(ProcessBuilder builder) {
         StringBuilder stringBuilder = new StringBuilder();
         for (String str : builder.command()) {
             stringBuilder.append(str).append(' ');
@@ -269,10 +310,9 @@ public class Apk2Gradle {
             });
             thread.start();
             int code = process.waitFor();
-            if (code == 0) return true;
+            if (code != 0) throw new RuntimeException("Exec failed: " + code);
         } catch (Exception e) {
-            e.printStackTrace();
+            throw new RuntimeException(e);
         }
-        return false;
     }
 }
