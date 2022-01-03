@@ -250,6 +250,9 @@ tasks.whenTaskAdded {
             Document manifest = readXml(file('src/main/AndroidManifest.xml'))
             String packageName = manifest.getDocumentElement().getAttribute("package")
             cur.outputs.files.each {
+                if (it.isFile()) {
+                    return
+                }
                 // 生成新的smali
                 def newSmaliList = dumpDexDir(it, new File(buildDir, "smali/${variantName}/_new"))
 

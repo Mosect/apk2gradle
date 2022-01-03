@@ -23,15 +23,32 @@ gradlew outputProject
 
 不想构建工具？直接点击下载：
 
-[V1.1.0](http://mosect.com/assets/apk2gradle/apk2gradle-1.1.0.zip)
+[V1.1.1](http://mosect.com/assets/apk2gradle/apk2gradle-1.1.1.zip)
+
+## 更新计划
+**V1.2.0**
+```
+1. 支持smali、java混合开发
+```
 
 ## 更新记录
+**V1.1.1**
+```
+1. 修复release无法运行或者打包出错问题
+```
 **V1.1.0**
 ```
 1. 改用aar方式导入原apk资源文件，相关文件：res.aar
 2. 修复smali合并错误问题
 3. 弃用unknown.jar方式，改用resources目录存放
 5. 更新apktool工具，此工具为修改后版本，增加参数 -r-txt 来输出aar的R.txt
+```
+
+## 已知问题
+**V1.1.0**
+```
+1. debug无法直接运行，后续版本修改
+2. release运行出错或者无法打包，V1.1.1版本已修复
 ```
 
 ## 使用工具：
