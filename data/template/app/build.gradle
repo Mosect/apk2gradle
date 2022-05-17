@@ -2,6 +2,8 @@ plugins {
     id 'com.android.application'
 }
 
+apply from: file('build2.gradle')
+
 android {
     compileSdk __COMPILE_SDK__
 
@@ -11,6 +13,7 @@ android {
         targetSdk __TARGET__SDK__
         versionCode __VERSION_CODE__
         versionName __VERSION_NAME__
+        multiDexEnabled __MULTI_DEX_ENABLED__
     }
 
     buildTypes {
@@ -28,5 +31,3 @@ android {
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
 }
-
-apply from: file('build2.gradle')

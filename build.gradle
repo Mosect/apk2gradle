@@ -25,13 +25,19 @@ allprojects {
 apply plugin: 'java-library'
 apply plugin: 'com.github.johnrengelman.shadow'
 
-def appVersion = '1.1.1'
+def appVersion = '2.0.0'
 def appName = 'apk2gradle'
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation 'com.google.code.gson:gson:2.8.9'
     implementation 'org.yaml:snakeyaml:1.21'
+    // baksmali
+    implementation('org.smali:baksmali:2.5.2')
+    // smali
+    implementation('org.smali:smali:2.5.2')
+
+    testImplementation 'junit:junit:4.13.2'
 }
 
 jar {
