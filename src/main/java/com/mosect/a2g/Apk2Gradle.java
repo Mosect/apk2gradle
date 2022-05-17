@@ -1,15 +1,16 @@
 package com.mosect.a2g;
 
 import com.google.gson.Gson;
+import com.mosect.a2g.util.IOUtils;
+import com.mosect.a2g.util.LogUtils;
+import com.mosect.a2g.util.ProcessUtils;
+import com.mosect.a2g.util.TextUtils;
 
 import org.w3c.dom.Document;
 import org.yaml.snakeyaml.Yaml;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Enumeration;
@@ -59,7 +60,7 @@ public class Apk2Gradle {
         System.out.println("java -jar apk2gradle.jar /e my.apk");
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         if (null == args || args.length == 0) {
             printHelp();
             return;
@@ -98,6 +99,8 @@ public class Apk2Gradle {
         File cacheDir = new File(config.cache);
         File templateDir = new File(config.template);
         File apktoolFile = new File(config.apktool);
+        File dex2jarFile = new File(config.dex2jar);
+        File rtxtMakerFile = new File(config.rtxtMaker);
 
         File apkFile = new File(args[1]);
         String outName = apkFile.getName().replace(".", "_") + "_a2g";
@@ -108,12 +111,20 @@ public class Apk2Gradle {
             // dump apk
             LogUtils.i(TAG, "dump apk");
             File apkDir = new File(tempDir, "apk");
-            execWithException(new ProcessBuilder(
-                    config.java, "-jar", apktoolFile.getAbsolutePath(),
-                    "d", "-s", "--use-aapt2", "-o", apkDir.getAbsolutePath(), apkFile.getAbsolutePath()
-            ));
+            ProcessUtils.execJava(
+                    apktoolFile.getAbsolutePath(),
+                    "d",
+                    "--use-aapt2", "--only-main-classes",
+                    "-o", apkDir.getAbsolutePath(),
+                    apkFile.getAbsolutePath()
+            );
+
+            // list all smali dirs
+            Map<String, File> smaliDirMap = IOUtils.listSmaliDirs(apkDir);
+
             if (outDir.exists()) IOUtils.delete(outDir);
             outDir.mkdirs();
+
             // copy template files
             LogUtils.i(TAG, "copy template files");
             IOUtils.copy(templateDir, outDir);
@@ -137,6 +148,9 @@ public class Apk2Gradle {
             }
             manifest.getDocumentElement().removeAttribute("platformBuildVersionCode");
             manifest.getDocumentElement().removeAttribute("platformBuildVersionName");
+            String resPackageName = packageName + ".a2g";
+            manifest.getDocumentElement().setAttribute("package", resPackageName);
+            boolean multiDexEnabled = smaliDirMap.size() > 1;
 
             // modify build.gradle
             LogUtils.i(TAG, "modify build.gradle");
@@ -147,17 +161,16 @@ public class Apk2Gradle {
             buildEnv.put("__TARGET__SDK__", targetSdk);
             buildEnv.put("__VERSION_CODE__", versionCode);
             buildEnv.put("__VERSION_NAME__", string(versionName));
+            buildEnv.put("__MULTI_DEX_ENABLED__", String.valueOf(multiDexEnabled));
             modifyBuildGradle(new File(outDir, "app/build.gradle"), buildEnv);
 
+            // main sourceSet dir
             File mainDir = new File(outDir, "app/src/main");
             mainDir.mkdirs();
+
             // create AndroidManifest.xml
             LogUtils.i(TAG, "create AndroidManifest.xml");
             IOUtils.saveDocument(new File(mainDir, "AndroidManifest.xml"), manifest);
-            // copy res
-            // changed: create res.aar
-//            LogUtils.i(TAG, "copy res");
-//            IOUtils.copy(new File(apkDir, "res"), new File(mainDir, "res"));
             // copy public.xml
             IOUtils.copy(new File(apkDir, "res/values/public.xml"), new File(mainDir, "res/values/public.xml"));
             // copy assets
@@ -171,6 +184,20 @@ public class Apk2Gradle {
             IOUtils.copy(new File(apkDir, "kotlin"), new File(mainDir, "resources"));
             IOUtils.copy(new File(apkDir, "unknown"), new File(mainDir, "resources"));
             IOUtils.copy(new File(apkDir, "META-INF"), new File(mainDir, "resources"));
+            // copy smali
+            LogUtils.i(TAG, "copy smali");
+            File smaliDir = new File(mainDir, "smali");
+            for (Map.Entry<String, File> entry : smaliDirMap.entrySet()) {
+                IOUtils.copy(entry.getValue(), new File(smaliDir, entry.getKey()));
+            }
+            // create class-operation.txt
+            LogUtils.i(TAG, "create class-operation.txt");
+            List<String> classOperationLines = new ArrayList<>();
+            classOperationLines.add("replace " + resPackageName + ".R*");
+            classOperationLines.add("delete com.mosect.a2g.app.res.R*");
+            classOperationLines.add("# Remove multidex lib");
+            classOperationLines.add("delete android.support.multidex.**");
+            IOUtils.saveLines(new File(outDir, "app/class-operation.txt"), classOperationLines);
 
             new File(mainDir, "java").mkdirs();
 
@@ -181,15 +208,15 @@ public class Apk2Gradle {
             resAarDir.mkdirs();
             LogUtils.i(TAG, "create res.aar");
             File resAarFile = new File(originalDir, "res.aar");
-            execWithException(new ProcessBuilder(
-                    config.java, "-jar", apktoolFile.getAbsolutePath(),
-                    "b", "--use-aapt2", "--r-txt", "-f",
-                    apkDir.getAbsolutePath()
-            ));
-            File rTxtFile = new File(apkDir, "build/R.txt");
+            RtxtMaker rtxtMaker = new RtxtMaker();
+            rtxtMaker.setDex2jarFile(dex2jarFile);
+            rtxtMaker.setApktoolProjectDir(apkDir);
+            rtxtMaker.setRtxtMakerJarFile(rtxtMakerFile);
+            rtxtMaker.setWorkDir(new File(tempDir, "RTxt"));
+            rtxtMaker.run();
             IOUtils.zip(new ZipItem[]{
                     new ZipItem("proguard.txt"),
-                    new ZipItem(rTxtFile, "R.txt"),
+                    new ZipItem(rtxtMaker.getOutputFile(), "R.txt"),
                     new ZipItem(new File(apkDir, "res"), "res"),
                     new ZipItem(Apk2Gradle.class.getResourceAsStream("/aar-manifest.xml"), "AndroidManifest.xml")
             }, resAarFile);
@@ -197,22 +224,10 @@ public class Apk2Gradle {
             // create classes.jar
             LogUtils.i(TAG, "create classes.jar");
             File classesJar = new File(originalDir, "classes.jar");
-            execWithException(new ProcessBuilder(config.dex2jar,
-                    "-o", classesJar.getAbsolutePath(), apkFile.getAbsolutePath()));
-            // create unknown.jar
-            // changed: copy resources
-//            LogUtils.i(TAG, "create unknown.jar");
-//            IOUtils.zipDir(
-//                    new ZipItem[]{
-//                            new ZipItem(new File(apkDir, "unknown"), ""),
-//                            new ZipItem(new File(apkDir, "kotlin"), "kotlin"),
-//                            new ZipItem(new File(apkDir, "META-INF"), "META-INF")
-//                    },
-//                    new File(originalDir, "unknown.jar")
-//            );
-            // copy dex files
-            LogUtils.i(TAG, "copy dex files");
-            copyDexFiles(apkDir, originalDir);
+            ProcessUtils.execWithException(new ProcessBuilder(
+                    dex2jarFile.getAbsolutePath(),
+                    "-o", classesJar.getAbsolutePath(), apkFile.getAbsolutePath()
+            ));
 
             LogUtils.i(TAG, "apk to gradle ok");
         } finally {
@@ -276,43 +291,11 @@ public class Apk2Gradle {
         }
         if (null == config) config = new Config();
 
-        if (TextUtils.empty(config.java)) config.java = "java";
         if (TextUtils.empty(config.apktool)) config.apktool = "apktool.jar";
         if (TextUtils.empty(config.cache)) config.cache = "cache";
         if (TextUtils.empty(config.template)) config.template = "template";
         if (TextUtils.empty(config.dex2jar)) config.dex2jar = "dex-tools/d2j-dex2jar.bat";
+        if (TextUtils.empty(config.rtxtMaker)) config.rtxtMaker = "RtxtMaker.jar";
         return config;
-    }
-
-    private static void execWithException(ProcessBuilder builder) {
-        StringBuilder stringBuilder = new StringBuilder();
-        for (String str : builder.command()) {
-            stringBuilder.append(str).append(' ');
-        }
-        LogUtils.i(TAG, "exec: " + stringBuilder);
-        try {
-            Process process = builder.start();
-            InputStream error = process.getErrorStream();
-            Thread thread = new Thread(() -> {
-                InputStreamReader isr = new InputStreamReader(error);
-                BufferedReader reader = new BufferedReader(isr);
-                String line;
-                try {
-                    while ((line = reader.readLine()) != null) {
-                        LogUtils.e(TAG, line);
-                    }
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-                IOUtils.close(reader);
-                IOUtils.close(isr);
-                IOUtils.close(error);
-            });
-            thread.start();
-            int code = process.waitFor();
-            if (code != 0) throw new RuntimeException("Exec failed: " + code);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
     }
 }

@@ -3,6 +3,8 @@ import org.w3c.dom.Element
 
 import javax.xml.parsers.DocumentBuilderFactory
 
+apply plugin: 'com.mosect.smali.plugin.SmaliPlugin'
+
 dependencies {
     if (file('original/classes.jar').exists()) {
         compileOnly files('original/classes.jar')
@@ -10,6 +12,7 @@ dependencies {
     if (file('original/res.aar').exists()) {
         implementation files('original/res.aar')
     }
+    implementation 'com.github.Mosect:Android-SmaliSdk:1.1.1-b1'
 }
 
 def readXml = { File file ->
@@ -17,277 +20,28 @@ def readXml = { File file ->
 }
 
 android {
-    aaptOptions {
-        File publicTxtFile = new File(buildDir, 'public.txt')
-        if (!publicTxtFile.exists()) {
-            // 产生public.txt
-            if (!publicTxtFile.parentFile.exists()) publicTxtFile.parentFile.mkdirs()
-            publicTxtFile.text = ''
-        }
-        File publicXmlFile = file('src/main/res/values/public.xml')
-        if (publicXmlFile.exists()) {
-            Document manifest = readXml(file('src/main/AndroidManifest.xml'))
-            def packName = manifest.getDocumentElement().getAttribute("package")
-            Document publicXml = readXml(publicXmlFile)
-            def list = publicXml.getDocumentElement().getElementsByTagName("public")
-            if (list.getLength() > 0) {
-                for (i in 0..<list.getLength()) {
-                    Element pi = list.item(i)
-                    def type = pi.getAttribute('type')
-                    def name = pi.getAttribute('name')
-                    def id = pi.getAttribute('id')
-                    publicTxtFile.append("${packName}:${type}/${name} = ${id}\n")
-                }
+    File publicTxtFile = new File(buildDir, 'public.txt')
+    aaptOptions.additionalParameters("--stable-ids", "${publicTxtFile.absolutePath}")
+    applicationVariants.all { variant ->
+        def task = tasks.findByName(variant.preBuildProvider.name)
+        task.doLast {
+            if (!publicTxtFile.exists()) {
+                // 产生public.txt
+                if (!publicTxtFile.parentFile.exists()) publicTxtFile.parentFile.mkdirs()
+                publicTxtFile.text = ''
             }
-        }
-        aaptOptions.additionalParameters("--stable-ids", "${publicTxtFile.absolutePath}")
-    }
-}
-
-def dumpDex = { File dexFile, File outDir ->
-    if (!outDir.exists()) {
-        outDir.mkdirs()
-    }
-    javaexec {
-        def baksmali = rootProject.file('gradle/baksmali.jar')
-        main = '-jar'
-        args = [
-                baksmali.getAbsolutePath(), 'd',
-                '--bcp', '""', '-l',
-                '-o', outDir.absolutePath, dexFile.absolutePath
-        ]
-    }
-}
-
-def dumpDexDir = { File dir, File outDir ->
-    def files = dir.listFiles()
-    def result = []
-    files.each {
-        if (it.name ==~ '^classes[0-9]?.dex$') {
-            def smaliDir = new File(outDir, it.name.replace('.', '_'))
-            smaliDir.delete()
-            dumpDex(it, smaliDir)
-            result.add(smaliDir)
-        }
-    }
-    return result
-}
-
-def readSmali = { File file ->
-//    println "readSmali: ${file}"
-    def result = [
-            members: [],
-            methods: [:],
-            fields : [:],
-    ]
-    def method = null
-    def lines = file.readLines()
-    lines.each { String line ->
-        boolean handled
-        if (method) {
-            handled = true
-            method.lines.add(line)
-            if (line ==~ '^\\s*\\.end\\s+method\\s*$') {
-                method = null
-            }
-        } else {
-            if (line ==~ '^\\s*\\.method\\s+.+\\(\\S*\\)\\S+.*$') {
-                def ss = line.split('\\s')
-                def name = null
-                for (def si = ss.length - 1; si >= 0; si--) {
-                    String s = ss[si]
-                    if (s.contains('(')) {
-                        name = s
-                        break
+            File publicXmlFile = file('src/main/res/values/public.xml')
+            if (publicXmlFile.exists()) {
+                Document publicXml = readXml(publicXmlFile)
+                def list = publicXml.getDocumentElement().getElementsByTagName("public")
+                if (list.getLength() > 0) {
+                    for (i in 0..<list.getLength()) {
+                        Element pi = list.item(i)
+                        def type = pi.getAttribute('type')
+                        def name = pi.getAttribute('name')
+                        def id = pi.getAttribute('id')
+                        publicTxtFile.append("${variant.applicationId}:${type}/${name} = ${id}\n")
                     }
-                }
-                if (name) {
-                    method = [
-                            type : 'method',
-                            name : name,
-                            lines: [],
-                    ]
-                    method.lines.add(line)
-                    result.methods[method.name] = method
-                    result.members.add(method)
-                    handled = true
-                } else {
-                    handled = false
-                }
-            } else if (line ==~ '^\\s*\\.field\\s+.+:\\S+.*$') {
-                def ss = line.split('\\s')
-                def name = null
-                for (def si = ss.length - 1; si >= 0; si--) {
-                    String s = ss[si]
-                    if (s.contains(':')) {
-                        name = s.split(':')[0]
-                        break
-                    }
-                }
-                if (name) {
-                    def obj = [
-                            type: 'field',
-                            line: line,
-                            name: name,
-                    ]
-                    result.members.add(obj)
-                    result.fields[obj.name] = obj
-                    handled = true
-                } else {
-                    handled = false
-                }
-            } else {
-                handled = false
-            }
-        }
-        if (!handled) {
-            def obj = [
-                    type: 'line',
-                    line: line,
-            ]
-            result.members.add(obj)
-        }
-    }
-    return result
-}
-
-def margeSmali = { File from, File to ->
-    println "mergeSmali: ${from} >>> ${to}"
-    def fromSmali = readSmali(from)
-    def toSmali = readSmali(to)
-    fromSmali.methods.each {
-        def method = toSmali.methods[it.key]
-        if (method) {
-            method.lines = it.value.lines
-        } else {
-            // 新增方法
-            toSmali.members.add(it.value)
-        }
-    }
-    fromSmali.fields.each {
-        def field = toSmali.fields[it.key]
-        if (field) {
-            field.line = it.value.line
-        } else {
-            // 新增字段
-            toSmali.members.add(it.value)
-        }
-    }
-
-    def lines = []
-    toSmali.members.each {
-        switch (it.type) {
-            case 'line':
-            case 'field':
-                lines.add(it.line)
-                break
-            case 'method':
-                lines.addAll(it.lines)
-                break
-        }
-    }
-    to.text = ''
-    lines.each {
-        to.append(it)
-        to.append('\n')
-    }
-}
-
-def putSmaliFile = { File file, String classPath, def outSmaliList, String packageName ->
-    println "putSmaliFile: ${classPath}"
-    if (classPath.startsWith("com/mosect/a2g/app/res/R")) {
-        println "ignoreSmali: ${file}"
-        return
-    }
-    File mainDir = null
-    def rClassPath = "${packageName.replace(".", "/")}/R"
-    def isRClass = classPath.startsWith(rClassPath)
-    for (File smaliDir : outSmaliList) {
-        if (smaliDir.name == 'classes_dex') {
-            mainDir = smaliDir
-        }
-        File outFile = new File(smaliDir, classPath)
-        if (outFile.exists()) {
-            if (isRClass) {
-                // R class, replace
-                println "replaceSmali: ${file} >>> ${outFile}"
-                outFile.text = file.text
-            } else {
-                margeSmali(file, outFile)
-            }
-            return
-        }
-    }
-    // 新增的smali，复制smali
-    if (mainDir) {
-        File outFile = new File(mainDir, classPath)
-        println "addSmali: ${outFile}"
-        if (!outFile.parentFile.exists()) outFile.parentFile.mkdirs()
-        outFile.text = file.text
-    }
-}
-
-def createDex = { File smaliDir, File outFile ->
-    println "createDex: ${smaliDir} >>> ${outFile}"
-    if (!outFile.parentFile.exists()) outFile.parentFile.mkdirs()
-    javaexec {
-        def smali = rootProject.file('gradle/smali.jar')
-        main = "-jar"
-        args = [
-                smali.getAbsolutePath(),
-                'a', '-o', outFile.getAbsolutePath(),
-                smaliDir.getAbsolutePath()
-        ]
-    }
-}
-
-// 合并dex
-tasks.whenTaskAdded {
-    Task cur = it
-    if (cur.name ==~ '^mergeDex\\S+') {
-        cur.doLast {
-            def variantName = cur.variantName
-            Document manifest = readXml(file('src/main/AndroidManifest.xml'))
-            String packageName = manifest.getDocumentElement().getAttribute("package")
-            cur.outputs.files.each {
-                if (it.isFile()) {
-                    return
-                }
-                // 生成新的smali
-                def newSmaliList = dumpDexDir(it, new File(buildDir, "smali/${variantName}/_new"))
-
-                // 生产久的smali
-                def oldSmaliList = dumpDexDir(file('original'), new File(buildDir, "smali/${variantName}/_old"))
-
-                // 合并smali
-                newSmaliList.each { File dir ->
-                    def files = fileTree(dir)
-                    files.each { File file ->
-                        if (file.name ==~ '^\\S+.smali$') {
-                            String path = dir.relativePath(file)
-                            putSmaliFile(file, path, oldSmaliList, packageName)
-                        }
-                    }
-                }
-
-                // 生成dex
-                File dexDir = new File(buildDir, "dex/${variantName}")
-                oldSmaliList.each {
-                    def dexName = it.name.replace('_', '.')
-                    File dexFile = new File(dexDir, dexName)
-                    createDex(it, dexFile)
-                }
-
-                // 覆盖dex
-                it.listFiles().each {
-                    if (it.name ==~ 'classes[0-9]*.dex') {
-                        it.delete()
-                    }
-                }
-                def dir = it
-                copy {
-                    from(dexDir)
-                    into(dir)
                 }
             }
         }
