@@ -135,10 +135,13 @@ public class Apk2Gradle {
                     Map.class
             );
             String minSdk = get(apktoolYml, "sdkInfo", "minSdkVersion");
+            if (TextUtils.empty(minSdk)) minSdk = "19";
             String targetSdk = get(apktoolYml, "sdkInfo", "targetSdkVersion");
             if (TextUtils.empty(targetSdk)) targetSdk = minSdk;
             String versionName = get(apktoolYml, "versionInfo", "versionName");
+            if (TextUtils.empty(versionName)) versionName = "1.0";
             String versionCode = get(apktoolYml, "versionInfo", "versionCode");
+            if (TextUtils.empty(versionCode)) versionCode = "1";
             Document manifest = IOUtils.readDocument(new File(apkDir, "AndroidManifest.xml"));
             String packageName = manifest.getDocumentElement().getAttribute("package");
             String compileSdk = manifest.getDocumentElement().getAttribute("platformBuildVersionCode");
