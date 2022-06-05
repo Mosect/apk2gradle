@@ -14,9 +14,6 @@ Apk to gradle project
 2. 资源res可以添加和修改，但是不能删除
 3. java类可以添加和修改，不能删除；修改的最小单位是方法和字段
 
-## 下载工具
-[v2.0.0-b1](output/apk2gradle-2.0.0.zip)
-
 ## 构建工具：
 在项目目录下，执行：
 ```
@@ -25,6 +22,12 @@ gradlew outputProject
 相关工具将会输出在**build/apk2gradle-xxx**目录下
 
 ## 更新记录
+
+**V2.0.2**
+1. 更新Android-SmaliPlugin为1.1.2
+2. 其他细节优化
+
+
 **V2.0.0-b1**
 
 1. 导出的项目改用[Android-SmaliPlugin](https://github.com/Mosect/Android-SmaliPlugin)，支持java+smali混合开发
