@@ -42,7 +42,7 @@ gradlew outputProject
 ### V2.1.0
 1. 新版本androidx对v31只了支持，引用了非原生rom资源，values-v31/colors.xml文件可能包含非AndroidSdk资源，需要手动修复出错位置
 
-###V2.0.0-b1
+### V2.0.0-b1
 1. 直接运行debug有可能无法编译smali代码，属于Android-SmaliPlugin问题，请在[Android-SmaliPlugin](https://github.com/Mosect/Android-SmaliPlugin)项目提issue
 
 
