@@ -100,7 +100,6 @@ public class Apk2Gradle {
         File templateDir = new File(config.template);
         File apktoolFile = new File(config.apktool);
         File dex2jarFile = new File(config.dex2jar);
-        File rtxtMakerFile = new File(config.rtxtMaker);
 
         File apkFile = new File(args[1]);
         String outName = apkFile.getName().replace(".", "_") + "_a2g";
@@ -206,23 +205,60 @@ public class Apk2Gradle {
 
             File originalDir = new File(outDir, "app/original");
             originalDir.mkdirs();
-            // create res.aar
-            File resAarDir = new File(tempDir, "res_aar");
-            resAarDir.mkdirs();
-            LogUtils.i(TAG, "create res.aar");
-            File resAarFile = new File(originalDir, "res.aar");
-            RtxtMaker rtxtMaker = new RtxtMaker();
-            rtxtMaker.setDex2jarFile(dex2jarFile);
-            rtxtMaker.setApktoolProjectDir(apkDir);
-            rtxtMaker.setRtxtMakerJarFile(rtxtMakerFile);
-            rtxtMaker.setWorkDir(new File(tempDir, "RTxt"));
-            rtxtMaker.run();
-            IOUtils.zip(new ZipItem[]{
-                    new ZipItem("proguard.txt"),
-                    new ZipItem(rtxtMaker.getOutputFile(), "R.txt"),
-                    new ZipItem(new File(apkDir, "res"), "res"),
-                    new ZipItem(Apk2Gradle.class.getResourceAsStream("/aar-manifest.xml"), "AndroidManifest.xml")
-            }, resAarFile);
+
+            // list all res files
+            File apkResDir = new File(apkDir, "res");
+            List<String> resPaths = new ArrayList<>();
+            IOUtils.listFile(apkResDir, "", resPaths);
+            List<String[]> specialResList = new ArrayList<>();
+            List<String> normalResList = new ArrayList<>();
+            for (String path : resPaths) {
+                String[] parts = path.split("/");
+                if (parts.length == 2) {
+                    String fileName = parts[1];
+                    int index = fileName.indexOf('.');
+                    String name = index >= 0 ? fileName.substring(0, index) : fileName;
+                    System.out.println(name);
+                    if (name.matches(".*[$@*:,~!%&].*")) {
+                        // special res file
+                        String type = parts[0];
+                        index = type.indexOf('-');
+                        String typeName = index >= 0 ? type.substring(0, index) : type;
+                        specialResList.add(new String[]{path, typeName, name});
+                    } else {
+                        normalResList.add(path);
+                    }
+                }
+            }
+
+            if (specialResList.size() > 0) {
+                // create res.aar
+                LogUtils.i(TAG, "create special res.aar");
+                File resAarFile = new File(originalDir, "res.aar");
+                List<String> rTxtLines = new ArrayList<>();
+                List<ZipItem> zipItems = new ArrayList<>();
+                for (String[] array : specialResList) {
+                    rTxtLines.add(String.format("%s %s %s 0x0", "int", array[1], array[2]));
+                    zipItems.add(new ZipItem(new File(apkResDir, array[0]), "res/" + array[0]));
+                }
+                zipItems.add(new ZipItem("proguard.txt"));
+                zipItems.add(new ZipItem(Apk2Gradle.class.getResourceAsStream("/aar-manifest.xml"), "AndroidManifest.xml"));
+
+                File rTxtFile = new File(tempDir, "R.txt");
+                IOUtils.saveLines(rTxtFile, rTxtLines);
+                IOUtils.zip(zipItems.toArray(new ZipItem[0]), resAarFile);
+            }
+
+            if (normalResList.size() > 0) {
+                // copy normal res
+                LogUtils.i(TAG, "copy normal res");
+                File resDir = new File(outDir, "app/src/main/res");
+                for (String path : normalResList) {
+                    File src = new File(apkResDir, path);
+                    File dst = new File(resDir, path);
+                    IOUtils.copy(src, dst);
+                }
+            }
 
             // create classes.jar
             LogUtils.i(TAG, "create classes.jar");
@@ -236,18 +272,6 @@ public class Apk2Gradle {
         } finally {
             // 清理缓存
             IOUtils.delete(tempDir);
-        }
-    }
-
-    private static void copyDexFiles(File apkDir, File outDir) {
-        File[] files = apkDir.listFiles();
-        if (null != files && files.length > 0) {
-            for (File f : files) {
-                if (f.getName().matches("^classes[0-9]*.dex$")) {
-                    File dst = new File(outDir, f.getName());
-                    IOUtils.copy(f, dst);
-                }
-            }
         }
     }
 
@@ -298,7 +322,6 @@ public class Apk2Gradle {
         if (TextUtils.empty(config.cache)) config.cache = "cache";
         if (TextUtils.empty(config.template)) config.template = "template";
         if (TextUtils.empty(config.dex2jar)) config.dex2jar = "dex-tools/d2j-dex2jar.bat";
-        if (TextUtils.empty(config.rtxtMaker)) config.rtxtMaker = "RtxtMaker.jar";
         return config;
     }
 }

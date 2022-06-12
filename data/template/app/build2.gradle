@@ -12,7 +12,7 @@ dependencies {
     if (file('original/res.aar').exists()) {
         implementation files('original/res.aar')
     }
-    implementation 'com.github.Mosect:Android-SmaliSdk:1.1.1-b1'
+    implementation 'com.github.Mosect:Android-SmaliSdk:1.2.0'
 }
 
 def readXml = { File file ->

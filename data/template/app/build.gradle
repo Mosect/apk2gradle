@@ -14,6 +14,7 @@ android {
         versionCode __VERSION_CODE__
         versionName __VERSION_NAME__
         multiDexEnabled __MULTI_DEX_ENABLED__
+        vectorDrawables.useSupportLibrary = true
     }
 
     buildTypes {

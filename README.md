@@ -15,7 +15,7 @@ Apk to gradle project
 3. java类可以添加和修改，不能删除；修改的最小单位是方法和字段
 
 ## 构建工具：
-在项目目录下，执行：
+在项目目录下，执行（需要设置JAVA_HOME环境变量为JDK1.8）：
 ```
 gradlew outputProject
 ```
@@ -23,19 +23,26 @@ gradlew outputProject
 
 ## 更新记录
 
-**V2.0.2**
+### V2.1.0
+1. 更改资源存储方式，名称含有特殊字符的资源才会放到res.aar，其他资源放在项目src/main/res之下
+2. 更新了Android-SmaliPlugin版本为1.2.0-b1，支持Copy注解
+
+### V2.0.2
 1. 更新Android-SmaliPlugin为1.1.2
 2. 其他细节优化
 
 
-**V2.0.0-b1**
+### V2.0.0-b1
 
 1. 导出的项目改用[Android-SmaliPlugin](https://github.com/Mosect/Android-SmaliPlugin)，支持java+smali混合开发
 2. 优化资源处理方式
 
 ## 已知问题
-**V2.0.0-b1**
 
+### V2.1.0
+1. 新版本androidx对v31只了支持，引用了非原生rom资源，values-v31/colors.xml文件可能包含非AndroidSdk资源，需要手动修复出错位置
+
+###V2.0.0-b1
 1. 直接运行debug有可能无法编译smali代码，属于Android-SmaliPlugin问题，请在[Android-SmaliPlugin](https://github.com/Mosect/Android-SmaliPlugin)项目提issue
 
 

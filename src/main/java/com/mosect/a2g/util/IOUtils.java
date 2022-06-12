@@ -314,4 +314,21 @@ public final class IOUtils {
             IOUtils.copyData(is, dst, new byte[1024]);
         }
     }
+
+    public static void listFile(File dir, String prefix, List<String> out) {
+        File[] files = dir.listFiles(file -> {
+            String name = file.getName();
+            return !".".equals(name) && !"..".equals(name);
+        });
+        if (null != files && files.length > 0) {
+            for (File file : files) {
+                if (file.isDirectory()) {
+                    String nextPrefix = prefix + file.getName() + "/";
+                    listFile(file, nextPrefix, out);
+                } else {
+                    out.add(prefix + file.getName());
+                }
+            }
+        }
+    }
 }

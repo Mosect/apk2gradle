@@ -6,5 +6,4 @@ public class Config {
     public String template;
     public String cache;
     public String dex2jar;
-    public String rtxtMaker;
 }
