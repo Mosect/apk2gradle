@@ -2,6 +2,6 @@
   "apktool": "apktool.jar",
   "template": "template",
   "cache": "cache",
-  "dex2jar": "dex-tools/d2j-dex2jar.bat",
+  "dexTools": "dex2jar.all-2.2.0-SNAPSHOT.jar",
   "rtxtMaker": "RtxtMaker.jar"
 }

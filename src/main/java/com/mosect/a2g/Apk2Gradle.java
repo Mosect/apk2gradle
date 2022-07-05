@@ -99,7 +99,7 @@ public class Apk2Gradle {
         File cacheDir = new File(config.cache);
         File templateDir = new File(config.template);
         File apktoolFile = new File(config.apktool);
-        File dex2jarFile = new File(config.dex2jar);
+        File dexTools = new File(config.dexTools);
 
         File apkFile = new File(args[1]);
         String outName = apkFile.getName().replace(".", "_") + "_a2g";
@@ -218,7 +218,7 @@ public class Apk2Gradle {
                     String fileName = parts[1];
                     int index = fileName.indexOf('.');
                     String name = index >= 0 ? fileName.substring(0, index) : fileName;
-                    System.out.println(name);
+//                    System.out.println(name);
                     if (name.matches(".*[$@*:,~!%&].*")) {
                         // special res file
                         String type = parts[0];
@@ -263,10 +263,8 @@ public class Apk2Gradle {
             // create classes.jar
             LogUtils.i(TAG, "create classes.jar");
             File classesJar = new File(originalDir, "classes.jar");
-            ProcessUtils.execWithException(new ProcessBuilder(
-                    dex2jarFile.getAbsolutePath(),
-                    "-o", classesJar.getAbsolutePath(), apkFile.getAbsolutePath()
-            ));
+            ProcessUtils.execJava(dexTools.getAbsolutePath(), "d2j-dex2jar",
+                    "-o", classesJar.getAbsolutePath(), apkFile.getAbsolutePath());
 
             LogUtils.i(TAG, "apk to gradle ok");
         } finally {
@@ -321,7 +319,7 @@ public class Apk2Gradle {
         if (TextUtils.empty(config.apktool)) config.apktool = "apktool.jar";
         if (TextUtils.empty(config.cache)) config.cache = "cache";
         if (TextUtils.empty(config.template)) config.template = "template";
-        if (TextUtils.empty(config.dex2jar)) config.dex2jar = "dex-tools/d2j-dex2jar.bat";
+        if (TextUtils.empty(config.dexTools)) config.dexTools = "dex-tools";
         return config;
     }
 }
