@@ -7,6 +7,8 @@ Apk to gradle project
 
 [dex2jar](https://github.com/pxb1988/dex2jar)
 
+[dex2jar-all](https://github.com/Mosect/dex2jar-all)
+
 [Android-SmaliPlugin](https://github.com/Mosect/Android-SmaliPlugin)
 
 ## 注意
@@ -22,6 +24,9 @@ gradlew outputProject
 相关工具将会输出在**build/apk2gradle-xxx**目录下
 
 ## 更新记录
+
+### V2.1.1
+1. 更换dex2jar工具，修复dex2jar在jdk8出现java.lang.NoSuchMethodError: java.nio.ByteBuffer.position(I)Ljava/nio/ByteBuffer;问题
 
 ### V2.1.0
 1. 更改资源存储方式，名称含有特殊字符的资源才会放到res.aar，其他资源放在项目src/main/res之下
