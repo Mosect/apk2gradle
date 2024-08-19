@@ -23,7 +23,12 @@ gradlew outputProject
 ```
 相关工具将会输出在**build/apk2gradle-xxx**目录下
 
+或者使用Android Studio、Idea打开项目，执行gradle任务：outputProject
+
 ## 更新记录
+
+### V2.1.2
+1. 修复读取配置文件发生异常问题：Integer cannot be cast to String
 
 ### V2.1.1
 1. 更换dex2jar工具，修复dex2jar在jdk8出现java.lang.NoSuchMethodError: java.nio.ByteBuffer.position(I)Ljava/nio/ByteBuffer;问题
@@ -45,7 +50,7 @@ gradlew outputProject
 ## 已知问题
 
 ### V2.1.0
-1. 新版本androidx对v31只了支持，引用了非原生rom资源，values-v31/colors.xml文件可能包含非AndroidSdk资源，需要手动修复出错位置
+1. 新版本androidx对v31做了支持，引用了非原生rom资源，values-v31/colors.xml文件可能包含非AndroidSdk资源，需要手动修复出错位置
 
 ### V2.0.0-b1
 1. 直接运行debug有可能无法编译smali代码，属于Android-SmaliPlugin问题，请在[Android-SmaliPlugin](https://github.com/Mosect/Android-SmaliPlugin)项目提issue
